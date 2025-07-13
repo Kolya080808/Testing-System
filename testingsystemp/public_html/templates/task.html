@@ -1,0 +1,43 @@
+{% extends "base.html" %}
+{% block title %}{{ task_id }}{% endblock %}
+{% block content %}
+<h2>{{ task_id }}</h2>
+<p>{{ task.description }}</p>
+<p>Языки: {{ task.languages | join(", ") }}</p>
+
+<form method="post" action="{{ url_for('upload', task_id=task_id) }}" enctype="multipart/form-data">
+  <input type="file" name="solution">
+  <button type="submit">Отправить</button>
+</form>
+
+{% if submissions %}
+  <h3>История отправок:</h3>
+  {% for submission in submissions|reverse %}
+    <div style="border: 1px solid #ccc; padding: 10px; margin-bottom: 1em;">
+      <p><strong>Время:</strong> {{ submission.timestamp.strftime("%Y-%m-%d %H:%M:%S") }}</p>
+      <p><strong>Пройдено:</strong> {{ submission.result.passed }} / {{ submission.result.total }}</p>
+      <ul>
+        {% for test in submission.result.details %}
+          <li style="margin-bottom: 0.5em;">
+            <strong>Тест {{ loop.index }}:</strong>
+            {% if test.passed %}
+              ✅ <span style="color:green;">Пройден</span>
+            {% else %}
+              ❌ <span style="color:red;">Не пройден</span><br>
+              <strong>Ввод:</strong> <pre>{{ test.input }}</pre>
+              <strong>Ожидалось:</strong> <code>{{ test.expected }}</code><br>
+              <strong>Получено:</strong> <code>{{ test.output }}</code><br>
+              {% if test.error %}
+                <strong>Ошибка:</strong> <pre style="color:red;">{{ test.error }}</pre>
+              {% endif %}
+            {% endif %}
+          </li>
+        {% endfor %}
+      </ul>
+    </div>
+  {% endfor %}
+{% endif %}
+
+{% endblock %}
+
+

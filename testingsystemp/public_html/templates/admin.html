@@ -1,0 +1,76 @@
+{% extends "base.html" %}
+{% block title %}Админка{% endblock %}
+{% block content %}
+<h2>Результаты всех пользователей</h2>
+<table>
+  <thead>
+    <tr>
+      <th>Пользователь</th>
+      <th>Баллы</th>
+      {% for t in tasks %}<th>{{ t }}</th>{% endfor %}
+    </tr>
+  </thead>
+  <tbody>
+    {% for row in board %}
+      <tr>
+        <td>{{ row.user }}</td>
+        <td>{{ row.total }}</td>
+        {% for t in tasks %}
+          <td>{{ row.details.get(t, 0) }}</td>
+        {% endfor %}
+      </tr>
+    {% endfor %}
+  </tbody>
+</table>
+<h2>Все отправленные файлы</h2>
+
+<table>
+
+  <thead>
+
+    <tr>
+
+      <th>Пользователь</th>
+
+      <th>Задача</th>
+
+      <th>Файл</th>
+
+      <th>Пройдено тестов</th>
+
+      <th>Скачать</th>
+
+    </tr>
+
+  </thead>
+
+  <tbody>
+
+    {% for username, user in USERS.items() %}
+
+      {% for sub in user.get("submissions", []) %}
+
+        <tr>
+
+          <td>{{ username }}</td>
+
+          <td>{{ sub.task_id }}</td>
+
+          <td>{{ sub.filepath.split('/')[-1] }}</td>
+
+          <td>{{ sub.result.passed }}/{{ sub.result.total }}</td>
+
+          <td><a href="{{ url_for('download_file', filename=sub.filepath.split('/')[-1]) }}">Скачать</a></td>
+
+        </tr>
+
+      {% endfor %}
+
+    {% endfor %}
+
+  </tbody>
+
+</table>
+
+{% endblock %}
+

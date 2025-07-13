@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <title>{% block title %}Задачи{% endblock %}</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
+</head>
+<body>
+    <div class="bar-wrapper">
+        <div class="bar">
+            <a href="{{ url_for('index') }}">Задачи</a>
+            {% if session.get("user") %}
+                <a href="{{ url_for('logout') }}">Выход ({{ session['user'] }})</a>
+                {% if USERS[session['user']]["is_admin"] %}
+                    <a href="{{ url_for('admin') }}">Админка</a>
+                {% endif %}
+            {% endif %}
+        </div>
+    </div>
+    <hr class="neon">
+    {% with messages = get_flashed_messages() %}
+      {% if messages %}
+        <ul>
+        {% for message in messages %}
+          <li>{{ message }}</li>
+        {% endfor %}
+        </ul>
+      {% endif %}
+    {% endwith %}
+    {% block content %}{% endblock %}
+</body>
+</html>
+
