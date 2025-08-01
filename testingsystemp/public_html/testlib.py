@@ -139,7 +139,7 @@ TASKS = {
         ],
     },
     "permute_n": {
-        "languages": ["py"],
+        "languages": ["py","cpp"],
         "tests": [
             {
                 "input": "1\n",
