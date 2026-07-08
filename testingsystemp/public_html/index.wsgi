@@ -357,7 +357,10 @@ def parse_tests(raw_tests: str):
 
 def tests_to_text(tests):
     return "\n".join(
-        f"{test.get('input', '').replace('\n', '\\n')}|||{test.get('output', '').replace('\n', '\\n')}"
+        "{}|||{}".format(
+            test.get("input", "").replace("\n", "\\n"),
+            test.get("output", "").replace("\n", "\\n"),
+        )
         for test in tests
     )
 
