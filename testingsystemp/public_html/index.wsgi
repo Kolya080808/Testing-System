@@ -81,105 +81,105 @@ def build_default_tasks():
     defaults = {}
     task_ids = set(TASK_DESCRIPTIONS.keys()) | set(testlib.TASKS.keys())
     for task_id in task_ids:
-test_task = testlib.TASKS.get(task_id, {})
-description_task = TASK_DESCRIPTIONS.get(task_id, {})
-defaults[task_id] = {
-    "description": description_task.get("description", ""),
-    "languages": list(test_task.get("languages", description_task.get("languages", []))),
-    "tests": list(test_task.get("tests", [])),
-}
+        test_task = testlib.TASKS.get(task_id, {})
+        description_task = TASK_DESCRIPTIONS.get(task_id, {})
+        defaults[task_id] = {
+            "description": description_task.get("description", ""),
+            "languages": list(test_task.get("languages", description_task.get("languages", []))),
+            "tests": list(test_task.get("tests", [])),
+        }
     return defaults
 
 def sync_testlib_tasks():
     testlib.TASKS = {
-task_id: {
-    "languages": list(task.get("languages", [])),
-    "tests": list(task.get("tests", [])),
-}
-for task_id, task in TASKS.items()
+        task_id: {
+            "languages": list(task.get("languages", [])),
+            "tests": list(task.get("tests", [])),
+        }
+        for task_id, task in TASKS.items()
     }
 
 def load_tasks():
     global TASKS
     defaults = build_default_tasks()
     if not os.path.exists(TASKS_FILE):
-TASKS = defaults
-sync_testlib_tasks()
-return
+        TASKS = defaults
+        sync_testlib_tasks()
+        return
     try:
-with open(TASKS_FILE, "r", encoding="utf-8") as f:
-    data = json.load(f)
-    loaded = {}
-    for task_id, task in data.items():
-        if not isinstance(task, dict):
-            continue
-        description = task.get("description", "")
-        languages = [lang.strip().lower() for lang in task.get("languages", []) if isinstance(lang, str) and lang.strip()]
-        tests = []
-        for test in task.get("tests", []):
-            if not isinstance(test, dict):
-                continue
-            inp = str(test.get("input", ""))
-            out = str(test.get("output", ""))
-            tests.append({"input": inp, "output": out})
-        loaded[task_id] = {
-            "description": str(description),
-            "languages": list(dict.fromkeys(languages)),
-            "tests": tests,
-        }
-    TASKS = loaded or defaults
+        with open(TASKS_FILE, "r", encoding="utf-8") as f:
+            data = json.load(f)
+            loaded = {}
+            for task_id, task in data.items():
+                if not isinstance(task, dict):
+                    continue
+                description = task.get("description", "")
+                languages = [lang.strip().lower() for lang in task.get("languages", []) if isinstance(lang, str) and lang.strip()]
+                tests = []
+                for test in task.get("tests", []):
+                    if not isinstance(test, dict):
+                        continue
+                    inp = str(test.get("input", ""))
+                    out = str(test.get("output", ""))
+                    tests.append({"input": inp, "output": out})
+                loaded[task_id] = {
+                    "description": str(description),
+                    "languages": list(dict.fromkeys(languages)),
+                    "tests": tests,
+                }
+            TASKS = loaded or defaults
     except Exception as e:
-print(f"[LOAD_TASKS] Ошибка при загрузке: {e}")
-TASKS = defaults
+        print(f"[LOAD_TASKS] Ошибка при загрузке: {e}")
+        TASKS = defaults
     sync_testlib_tasks()
 
 def save_tasks():
     with lock:
-try:
-    with open(TASKS_FILE, "w", encoding="utf-8") as f:
-        json.dump(TASKS, f, ensure_ascii=False, indent=2)
-    print(f"[SAVE_TASKS] Данные о задачах сохранены в {TASKS_FILE}")
-except Exception as e:
-    print(f"[SAVE_TASKS] Ошибка при сохранении: {e}")
+        try:
+            with open(TASKS_FILE, "w", encoding="utf-8") as f:
+                json.dump(TASKS, f, ensure_ascii=False, indent=2)
+            print(f"[SAVE_TASKS] Данные о задачах сохранены в {TASKS_FILE}")
+        except Exception as e:
+            print(f"[SAVE_TASKS] Ошибка при сохранении: {e}")
 
 def load_users():
     global USERS
     if not os.path.exists(USERS_FILE):
-USERS = copy.deepcopy(DEFAULT_USERS)
-return
+        USERS = copy.deepcopy(DEFAULT_USERS)
+        return
     try:
-with open(USERS_FILE, "r", encoding="utf-8") as f:
-    data = json.load(f)
-loaded = {}
-for username, user_data in data.items():
-    if not isinstance(user_data, dict):
-        continue
-    loaded[username] = {
-        "password": str(user_data.get("password", "")),
-        "is_admin": bool(user_data.get("is_admin", False)),
-        "submissions": [],
-    }
-USERS = loaded or copy.deepcopy(DEFAULT_USERS)
-print(f"[LOAD_USERS] Загружено пользователей из {USERS_FILE}")
+        with open(USERS_FILE, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        loaded = {}
+        for username, user_data in data.items():
+            if not isinstance(user_data, dict):
+                continue
+            loaded[username] = {
+                "password": str(user_data.get("password", "")),
+                "is_admin": bool(user_data.get("is_admin", False)),
+                "submissions": [],
+            }
+        USERS = loaded or copy.deepcopy(DEFAULT_USERS)
+        print(f"[LOAD_USERS] Загружено пользователей из {USERS_FILE}")
     except Exception as e:
-print(f"[LOAD_USERS] Ошибка при загрузке: {e}")
-USERS = copy.deepcopy(DEFAULT_USERS)
+        print(f"[LOAD_USERS] Ошибка при загрузке: {e}")
+        USERS = copy.deepcopy(DEFAULT_USERS)
 
 def save_users():
     with lock:
-data = {
-    username: {
-        "password": user_data.get("password", ""),
-        "is_admin": bool(user_data.get("is_admin", False)),
-    }
-    for username, user_data in USERS.items()
-}
-try:
-    with open(USERS_FILE, "w", encoding="utf-8") as f:
-        json.dump(data, f, ensure_ascii=False, indent=2)
-    print(f"[SAVE_USERS] Данные о пользователях сохранены в {USERS_FILE}")
-except Exception as e:
-    print(f"[SAVE_USERS] Ошибка при сохранении: {e}")
+        data = {
+            username: {
+                "password": user_data.get("password", ""),
+                "is_admin": bool(user_data.get("is_admin", False)),
+            }
+            for username, user_data in USERS.items()
+        }
+        try:
+            with open(USERS_FILE, "w", encoding="utf-8") as f:
+                json.dump(data, f, ensure_ascii=False, indent=2)
+            print(f"[SAVE_USERS] Данные о пользователях сохранены в {USERS_FILE}")
+        except Exception as e:
+            print(f"[SAVE_USERS] Ошибка при сохранении: {e}")
 
 def load_submissions():
     if not os.path.exists(SUBMISSIONS_FILE):
