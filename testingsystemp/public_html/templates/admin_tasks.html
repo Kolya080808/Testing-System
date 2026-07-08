@@ -1,0 +1,36 @@
+{% extends "base.html" %}
+{% block title %}Админка задач{% endblock %}
+{% block content %}
+<h2>Управление задачами и тестами</h2>
+
+<h3>Создать задачу</h3>
+<form method="post" action="{{ url_for('create_task') }}">
+  <label>ID задачи: <input type="text" name="task_id" required></label><br>
+  <label>Языки (через запятую): <input type="text" name="languages" placeholder="py, cpp" required></label><br>
+  <label>Описание:<br><textarea name="description" rows="5" cols="90"></textarea></label><br>
+  <label>Тесты (каждая строка: input|||output, перенос строки пишите как \n):<br>
+    <textarea name="tests" rows="8" cols="90" required></textarea>
+  </label><br>
+  <button type="submit">Создать</button>
+</form>
+
+<h3>Существующие задачи</h3>
+{% for task_id, task in tasks.items() %}
+  <div style="border: 1px solid #0ff; padding: 1em; margin-bottom: 1em;">
+    <h4>{{ task_id }}</h4>
+    <form method="post" action="{{ url_for('update_task', task_id=task_id) }}">
+      <label>Языки (через запятую):
+        <input type="text" name="languages" value="{{ task.languages | join(', ') }}" required>
+      </label><br>
+      <label>Описание:<br><textarea name="description" rows="5" cols="90">{{ task.description }}</textarea></label><br>
+      <label>Тесты (каждая строка: input|||output):<br>
+        <textarea name="tests" rows="8" cols="90" required>{{ tests_to_text(task.tests) }}</textarea>
+      </label><br>
+      <button type="submit">Сохранить</button>
+    </form>
+    <form method="post" action="{{ url_for('delete_task', task_id=task_id) }}" style="margin-top: 0.5em;">
+      <button type="submit">Удалить задачу</button>
+    </form>
+  </div>
+{% endfor %}
+{% endblock %}

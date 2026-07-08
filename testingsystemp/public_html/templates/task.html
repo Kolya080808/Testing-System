@@ -5,6 +5,20 @@
 <p>{{ task.description }}</p>
 <p>Языки: {{ task.languages | join(", ") }}</p>
 
+{% if task.tests %}
+  <h3>Примеры</h3>
+  <p><em>Автоматически показываются первые {{ example_limit }} примера(ов) ввод-вывод.</em></p>
+  <ul>
+    {% for test in task.tests[:example_limit] %}
+      <li style="margin-bottom: 0.5em;">
+        <strong>Пример {{ loop.index }}:</strong><br>
+        <strong>Ввод:</strong> <pre>{{ test.input }}</pre>
+        <strong>Ожидаемый вывод:</strong> <pre>{{ test.output }}</pre>
+      </li>
+    {% endfor %}
+  </ul>
+{% endif %}
+
 <form method="post" action="{{ url_for('upload', task_id=task_id) }}" enctype="multipart/form-data">
   <input type="file" name="solution">
   <button type="submit">Отправить</button>
@@ -20,15 +34,23 @@
         {% for test in submission.result.details %}
           <li style="margin-bottom: 0.5em;">
             <strong>Тест {{ loop.index }}:</strong>
-            {% if test.passed %}
-              ✅ <span style="color:green;">Пройден</span>
+            {% if is_admin_user %}
+              {% if test.passed %}
+                ✅ <span style="color:green;">AC</span>
+              {% else %}
+                ❌ <span style="color:red;">{{ test.verdict }}</span><br>
+                <strong>Ввод:</strong> <pre>{{ test.input }}</pre>
+                <strong>Ожидалось:</strong> <code>{{ test.expected }}</code><br>
+                <strong>Получено:</strong> <code>{{ test.output }}</code><br>
+                {% if test.error %}
+                  <strong>Ошибка:</strong> <pre style="color:red;">{{ test.error }}</pre>
+                {% endif %}
+              {% endif %}
             {% else %}
-              ❌ <span style="color:red;">Не пройден</span><br>
-              <strong>Ввод:</strong> <pre>{{ test.input }}</pre>
-              <strong>Ожидалось:</strong> <code>{{ test.expected }}</code><br>
-              <strong>Получено:</strong> <code>{{ test.output }}</code><br>
-              {% if test.error %}
-                <strong>Ошибка:</strong> <pre style="color:red;">{{ test.error }}</pre>
+              {% if test.verdict == "AC" %}
+                ✅ <span style="color:green;">AC</span>
+              {% else %}
+                ❌ <span style="color:red;">{{ test.verdict }}</span>
               {% endif %}
             {% endif %}
           </li>
@@ -39,5 +61,3 @@
 {% endif %}
 
 {% endblock %}
-
-

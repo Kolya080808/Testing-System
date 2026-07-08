@@ -1,0 +1,28 @@
+{% extends "base.html" %}
+{% block title %}Админка пользователей{% endblock %}
+{% block content %}
+<h2>Управление пользователями</h2>
+
+<h3>Создать пользователя</h3>
+<form method="post" action="{{ url_for('create_user') }}">
+  <label>Логин: <input type="text" name="username" required></label><br>
+  <label>Пароль: <input type="text" name="password" required></label><br>
+  <label><input type="checkbox" name="is_admin"> Администратор</label><br>
+  <button type="submit">Создать</button>
+</form>
+
+<h3>Существующие пользователи</h3>
+{% for username, user in USERS.items() %}
+  <div style="border: 1px solid #0ff; padding: 1em; margin-bottom: 1em;">
+    <strong>{{ username }}</strong>
+    <form method="post" action="{{ url_for('update_user', username=username) }}">
+      <label>Новый пароль (если нужен): <input type="text" name="password"></label><br>
+      <label><input type="checkbox" name="is_admin" {% if user.is_admin %}checked{% endif %}> Администратор</label><br>
+      <button type="submit">Сохранить</button>
+    </form>
+    <form method="post" action="{{ url_for('delete_user', username=username) }}" style="margin-top: 0.5em;">
+      <button type="submit">Удалить пользователя</button>
+    </form>
+  </div>
+{% endfor %}
+{% endblock %}
