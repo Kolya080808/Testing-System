@@ -6,14 +6,12 @@
 <p>Языки: {{ task.languages | join(", ") }}</p>
 
 {% if task.tests %}
-  <h3>Тесты задачи</h3>
-  {% if not is_admin_user %}
-    <p><em>Показаны только первые {{ visible_test_limit }} теста.</em></p>
-  {% endif %}
+  <h3>Примеры</h3>
+  <p><em>Автоматически показываются первые {{ example_limit }} примера(ов) ввод-вывод.</em></p>
   <ul>
-    {% for test in (task.tests if is_admin_user else task.tests[:visible_test_limit]) %}
+    {% for test in task.tests[:example_limit] %}
       <li style="margin-bottom: 0.5em;">
-        <strong>Тест {{ loop.index }}:</strong><br>
+        <strong>Пример {{ loop.index }}:</strong><br>
         <strong>Ввод:</strong> <pre>{{ test.input }}</pre>
         <strong>Ожидаемый вывод:</strong> <pre>{{ test.output }}</pre>
       </li>
@@ -28,26 +26,31 @@
 
 {% if submissions %}
   <h3>История отправок:</h3>
-  {% if not is_admin_user %}
-    <p><em>Для пользователя показываются только первые {{ visible_test_limit }} теста.</em></p>
-  {% endif %}
   {% for submission in submissions|reverse %}
     <div style="border: 1px solid #ccc; padding: 10px; margin-bottom: 1em;">
       <p><strong>Время:</strong> {{ submission.timestamp.strftime("%Y-%m-%d %H:%M:%S") }}</p>
       <p><strong>Пройдено:</strong> {{ submission.result.passed }} / {{ submission.result.total }}</p>
       <ul>
-        {% for test in (submission.result.details if is_admin_user else submission.result.details[:visible_test_limit]) %}
+        {% for test in submission.result.details %}
           <li style="margin-bottom: 0.5em;">
             <strong>Тест {{ loop.index }}:</strong>
-            {% if test.passed %}
-              ✅ <span style="color:green;">Пройден</span>
+            {% if is_admin_user %}
+              {% if test.passed %}
+                ✅ <span style="color:green;">AC</span>
+              {% else %}
+                ❌ <span style="color:red;">{{ test.verdict }}</span><br>
+                <strong>Ввод:</strong> <pre>{{ test.input }}</pre>
+                <strong>Ожидалось:</strong> <code>{{ test.expected }}</code><br>
+                <strong>Получено:</strong> <code>{{ test.output }}</code><br>
+                {% if test.error %}
+                  <strong>Ошибка:</strong> <pre style="color:red;">{{ test.error }}</pre>
+                {% endif %}
+              {% endif %}
             {% else %}
-              ❌ <span style="color:red;">Не пройден</span><br>
-              <strong>Ввод:</strong> <pre>{{ test.input }}</pre>
-              <strong>Ожидалось:</strong> <code>{{ test.expected }}</code><br>
-              <strong>Получено:</strong> <code>{{ test.output }}</code><br>
-              {% if test.error %}
-                <strong>Ошибка:</strong> <pre style="color:red;">{{ test.error }}</pre>
+              {% if test.verdict == "AC" %}
+                ✅ <span style="color:green;">AC</span>
+              {% else %}
+                ❌ <span style="color:red;">{{ test.verdict }}</span>
               {% endif %}
             {% endif %}
           </li>

@@ -14,11 +14,14 @@ def run_python_code(filepath, input_str):
             stderr=subprocess.PIPE,
             timeout=3
         )
-        if result.returncode != 0:
-            return None, result.stderr.decode()
-        return result.stdout.decode().strip(), None
+    except subprocess.TimeoutExpired:
+        return None, "TLE", "Time limit exceeded"
     except Exception as e:
-        return None, str(e)
+        return None, "RE", str(e)
+
+    if result.returncode != 0:
+        return None, "RE", result.stderr.decode()
+    return result.stdout.decode().strip(), "OK", None
 
 def run_cpp_code(filepath, input_str):
 
@@ -31,14 +34,20 @@ def run_cpp_code(filepath, input_str):
 
     exe_path = os.path.join(tmpdir, "prog")
 
-    compile_result = subprocess.run(
-        ["g++", filepath, "-o", exe_path],
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        timeout=5
-    )
+    try:
+        compile_result = subprocess.run(
+            ["g++", filepath, "-o", exe_path],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            timeout=5
+        )
+    except subprocess.TimeoutExpired:
+        return None, "CE", "Compilation timeout"
+    except Exception as e:
+        return None, "CE", str(e)
+
     if compile_result.returncode != 0:
-        return None, compile_result.stderr.decode()
+        return None, "CE", compile_result.stderr.decode()
 
     os.chmod(exe_path, 0o755)
 
@@ -51,10 +60,12 @@ def run_cpp_code(filepath, input_str):
             timeout=3
         )
         if result.returncode != 0:
-            return None, result.stderr.decode()
-        return result.stdout.decode().strip(), None
+            return None, "RE", result.stderr.decode()
+        return result.stdout.decode().strip(), "OK", None
+    except subprocess.TimeoutExpired:
+        return None, "TLE", "Time limit exceeded"
     except Exception as e:
-        return None, str(e)
+        return None, "RE", str(e)
 
 TASKS = {
     "compress_string": {
@@ -213,18 +224,20 @@ def evaluate(task_id: str, filepath: str):
         inp = test["input"]
         expected = test["output"]
 
-        output, err = run_func(filepath, inp)
-        print(f"[TEST] Вход: {inp.strip()} | Ожидаемый вывод: {expected.strip()} | Полученный вывод: {output.strip() if output else 'None'} | Ошибка: {err}")
+        output, status, err = run_func(filepath, inp)
+        print(f"[TEST] Вход: {inp.strip()} | Ожидаемый вывод: {expected.strip()} | Полученный вывод: {output.strip() if output else 'None'} | Статус: {status} | Ошибка: {err}")
         result_entry = {
             "input": inp,
             "expected": expected,
             "output": output if output else "",
             "error": err,
-            "passed": False
+            "passed": False,
+            "verdict": "WA",
         }
 
-        if err is not None:
+        if status != "OK":
             print(f"[ERROR] При выполнении теста возникла ошибка: {err}")
+            result_entry["verdict"] = status
             details.append(result_entry)
             continue
 
@@ -243,6 +256,7 @@ def evaluate(task_id: str, filepath: str):
                         "output": str(actual),
                         "passed": True,
                         "error": None,
+                        "verdict": "AC",
                     })
                     continue
                 else:
@@ -252,6 +266,7 @@ def evaluate(task_id: str, filepath: str):
                         "output": str(actual),
                         "passed": False,
                         "error": None,
+                        "verdict": "WA",
                     })
                     continue
             except Exception as e:
@@ -261,6 +276,7 @@ def evaluate(task_id: str, filepath: str):
                     "output": output,
                     "passed": False,
                     "error": str(e),
+                    "verdict": "WA",
                 })
                 continue
 
@@ -268,8 +284,10 @@ def evaluate(task_id: str, filepath: str):
         if output.strip() == expected.strip():
             passed += 1
             result_entry["passed"] = True
+            result_entry["verdict"] = "AC"
+        else:
+            result_entry["verdict"] = "WA"
 
         details.append(result_entry)
 
     return {"passed": passed, "total": total, "details": details}
-

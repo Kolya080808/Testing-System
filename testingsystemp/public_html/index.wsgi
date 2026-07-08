@@ -283,7 +283,7 @@ def task_detail(task_id):
         USERS=USERS,
         submissions=submissions,
         is_admin_user=is_admin_user,
-        visible_test_limit=2,
+        example_limit=2,
     )
 
 def allowed_file(filename: str) -> bool:
