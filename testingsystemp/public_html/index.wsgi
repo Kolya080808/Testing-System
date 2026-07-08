@@ -356,13 +356,23 @@ def parse_tests(raw_tests: str):
     return tests
 
 def tests_to_text(tests):
-    return "\n".join(
-        "{}|||{}".format(
-            test.get("input", "").replace("\n", "\\n"),
-            test.get("output", "").replace("\n", "\\n"),
+    rows = []
+    for case in tests or []:
+        if isinstance(case, dict):
+            inp = str(case.get("input", ""))
+            out = str(case.get("output", ""))
+        elif isinstance(case, (list, tuple)) and len(case) >= 2:
+            inp = str(case[0])
+            out = str(case[1])
+        else:
+            continue
+        rows.append(
+            "{}|||{}".format(
+                inp.replace("\n", "\\n"),
+                out.replace("\n", "\\n"),
+            )
         )
-        for test in tests
-    )
+    return "\n".join(rows)
 
 @app.route("/admin/tasks")
 @login_required
