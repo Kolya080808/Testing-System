@@ -329,6 +329,7 @@ def upload(task_id):
     return redirect(url_for("task_detail", task_id=task_id))
 
 @app.route("/admin")
+@login_required
 @admin_required
 def admin():
     return render_template("admin.html", USERS=USERS)

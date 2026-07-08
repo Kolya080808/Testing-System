@@ -5,6 +5,22 @@
 <p>{{ task.description }}</p>
 <p>Языки: {{ task.languages | join(", ") }}</p>
 
+{% if task.tests %}
+  <h3>Тесты задачи</h3>
+  {% if not is_admin_user %}
+    <p><em>Показаны только первые {{ visible_test_limit }} теста.</em></p>
+  {% endif %}
+  <ul>
+    {% for test in (task.tests if is_admin_user else task.tests[:visible_test_limit]) %}
+      <li style="margin-bottom: 0.5em;">
+        <strong>Тест {{ loop.index }}:</strong><br>
+        <strong>Ввод:</strong> <pre>{{ test.input }}</pre>
+        <strong>Ожидаемый вывод:</strong> <pre>{{ test.output }}</pre>
+      </li>
+    {% endfor %}
+  </ul>
+{% endif %}
+
 <form method="post" action="{{ url_for('upload', task_id=task_id) }}" enctype="multipart/form-data">
   <input type="file" name="solution">
   <button type="submit">Отправить</button>
@@ -42,4 +58,3 @@
 {% endif %}
 
 {% endblock %}
-
