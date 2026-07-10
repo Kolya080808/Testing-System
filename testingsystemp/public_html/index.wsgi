@@ -6,10 +6,11 @@ sys.path.append('/path/to/env/lib/python3.10/site-packages/')
 sys.path.insert(0, '/path/to/testingsystemp/public_html/')
 
 import json
+import uuid
 import threading
 import datetime as dt
 from functools import wraps
-from flask import Flask, render_template, request, redirect, url_for, flash, session, send_from_directory, abort
+from flask import Flask, render_template, request, redirect, url_for, flash, session, send_from_directory, abort, jsonify
 from werkzeug.utils import secure_filename
 
 import testlib
@@ -56,6 +57,12 @@ TASKS_FILE = os.path.join(BASE_DIR, "tasks.json")
 lock = threading.Lock()
 USERS = copy.deepcopy(DEFAULT_USERS)
 TASKS = {}
+
+# Реестр фоновых проверок: job_id -> {status, result, error, task_id, user}.
+# Хранится в памяти процесса (для школьного клуба на одном воркере этого
+# достаточно). Статусы: "running" -> "done" | "error".
+jobs_lock = threading.Lock()
+JOBS = {}
 
 def build_default_tasks():
     defaults = {}
@@ -202,6 +209,107 @@ load_users()
 load_tasks()
 load_submissions()
 
+def compute_scores(include_admins=True):
+    """Балльная система: балл за задачу = число пройденных тестов в ЛУЧШЕЙ
+    попытке. Итог = сумма по всем задачам. Возвращает
+    (board, task_ids, max_per_task, max_total)."""
+    task_ids = list(TASKS.keys())
+    max_per_task = {tid: len(TASKS[tid].get("tests", [])) for tid in task_ids}
+    max_total = sum(max_per_task.values())
+
+    board = []
+    for username, data in USERS.items():
+        if not include_admins and data.get("is_admin"):
+            continue
+        best = {}
+        for sub in data.get("submissions", []):
+            tid = sub.get("task_id")
+            if tid not in max_per_task:
+                continue
+            passed = sub.get("result", {}).get("passed", 0)
+            if passed > best.get(tid, -1):
+                best[tid] = passed
+        board.append({
+            "user": username,
+            "best": best,
+            "total": sum(best.values()),
+            "is_admin": bool(data.get("is_admin")),
+        })
+
+    board.sort(key=lambda r: (-r["total"], r["user"].lower()))
+
+    rank, prev_total = 0, None
+    for i, row in enumerate(board):
+        if row["total"] != prev_total:
+            rank = i + 1
+            prev_total = row["total"]
+        row["rank"] = rank
+    return board, task_ids, max_per_task, max_total
+
+
+def _new_upload_path(task_id, ext):
+    stamp = dt.datetime.now().timestamp()
+    raw = f"{session['user']}_{task_id}_{stamp}.{ext}"
+    # Не трогаем не-ASCII (кириллические логины), но блокируем разделители пути.
+    safe = raw.replace("/", "_").replace("\\", "_").replace("..", "_")
+    return os.path.join(UPLOAD_DIR, safe)
+
+
+def _store_solution(task_id, task):
+    """Сохраняет присланное решение (файл ИЛИ код из редактора) на диск.
+    Возвращает (save_path, ext, error)."""
+    file = request.files.get("solution")
+    code = request.form.get("code", "") or ""
+    lang = (request.form.get("language", "") or "").strip().lower()
+
+    if file and file.filename:
+        if not allowed_file(file.filename):
+            return None, None, "Недопустимое расширение файла."
+        ext = secure_filename(file.filename).rsplit(".", 1)[-1].lower()
+        if ext not in task["languages"]:
+            return None, None, f"Эта задача не поддерживает язык .{ext}."
+        save_path = _new_upload_path(task_id, ext)
+        file.save(save_path)
+        return save_path, ext, None
+
+    if code.strip():
+        ext = lang or (task["languages"][0] if task["languages"] else "")
+        if ext not in task["languages"]:
+            return None, None, f"Эта задача не поддерживает язык .{ext}."
+        save_path = _new_upload_path(task_id, ext)
+        with open(save_path, "w", encoding="utf-8") as f:
+            f.write(code)
+        return save_path, ext, None
+
+    return None, None, "Не выбран файл и не введён код."
+
+
+def _record_submission(username, task_id, save_path, result):
+    USERS[username].setdefault("submissions", []).append({
+        "task_id": task_id,
+        "filepath": save_path,
+        "result": result,
+        "timestamp": dt.datetime.now(),
+    })
+    save_submissions()
+
+
+def _run_job(job_id, username, task_id, save_path):
+    """Фоновая проверка решения: считает результат, сохраняет отправку и
+    помечает задачу как выполненную."""
+    try:
+        result = evaluate(task_id, save_path)
+        _record_submission(username, task_id, save_path, result)
+        with jobs_lock:
+            JOBS[job_id]["status"] = "done"
+            JOBS[job_id]["result"] = result
+    except Exception as e:
+        print(f"[JOB] Ошибка проверки {job_id}: {e}")
+        with jobs_lock:
+            JOBS[job_id]["status"] = "error"
+            JOBS[job_id]["error"] = str(e)
+
+
 def login_required(f):
     @wraps(f)
     def wrapped(*args, **kwargs):
@@ -272,41 +380,64 @@ def allowed_file(filename: str) -> bool:
 @app.route("/upload/<task_id>", methods=["POST"])
 @login_required
 def upload(task_id):
+    """Синхронная отправка без JavaScript (резервный путь)."""
     task = TASKS.get(task_id)
     if not task:
         flash("Задача не найдена.")
         return redirect(url_for("index"))
 
-    file = request.files.get("solution")
-    if not file or file.filename == "":
-        flash("Файл не выбран.")
+    save_path, ext, error = _store_solution(task_id, task)
+    if error:
+        flash(error)
         return redirect(url_for("task_detail", task_id=task_id))
-
-    if not allowed_file(file.filename):
-        flash("Недопустимое расширение файла.")
-        return redirect(url_for("task_detail", task_id=task_id))
-
-    filename = secure_filename(file.filename)
-    ext = filename.rsplit(".", 1)[-1].lower()
-    if ext not in task["languages"]:
-        flash(f"Эта задача не поддерживает язык {ext}.")
-        return redirect(url_for("task_detail", task_id=task_id))
-
-    save_path = os.path.join(UPLOAD_DIR, f"{session['user']}_{task_id}_{dt.datetime.now().timestamp()}.{ext}")
-    file.save(save_path)
 
     result = evaluate(task_id, save_path)
-
-    USERS[session["user"]].setdefault("submissions", []).append({
-        "task_id": task_id,
-        "filepath": save_path,
-        "result": result,
-        "timestamp": dt.datetime.now(),
-    })
-
-    save_submissions()
-
+    _record_submission(session["user"], task_id, save_path, result)
     return redirect(url_for("task_detail", task_id=task_id))
+
+
+@app.route("/submit/<task_id>", methods=["POST"])
+@login_required
+def submit(task_id):
+    """Асинхронная отправка (AJAX): сохраняет решение, запускает фоновую
+    проверку и сразу возвращает job_id, чтобы клиент показал статус."""
+    task = TASKS.get(task_id)
+    if not task:
+        return jsonify({"error": "Задача не найдена."}), 404
+
+    save_path, ext, error = _store_solution(task_id, task)
+    if error:
+        return jsonify({"error": error}), 400
+
+    job_id = uuid.uuid4().hex
+    with jobs_lock:
+        JOBS[job_id] = {
+            "status": "running", "result": None, "error": None,
+            "task_id": task_id, "user": session["user"],
+        }
+    worker = threading.Thread(
+        target=_run_job, args=(job_id, session["user"], task_id, save_path)
+    )
+    worker.daemon = True
+    worker.start()
+    return jsonify({"job_id": job_id, "status": "running"})
+
+
+@app.route("/status/<job_id>")
+@login_required
+def job_status(job_id):
+    with jobs_lock:
+        job = JOBS.get(job_id)
+        if not job:
+            return jsonify({"status": "unknown"}), 404
+        is_admin_user = bool(USERS.get(session["user"], {}).get("is_admin"))
+        if job.get("user") != session["user"] and not is_admin_user:
+            return jsonify({"status": "forbidden"}), 403
+        return jsonify({
+            "status": job["status"],
+            "result": job.get("result"),
+            "error": job.get("error"),
+        })
 
 @app.route("/admin")
 @login_required
@@ -314,27 +445,25 @@ def upload(task_id):
 def admin():
     return render_template("admin.html", USERS=USERS)
 
+@app.route("/leaderboard")
+@login_required
+def leaderboard():
+    board, task_ids, max_per_task, max_total = compute_scores(include_admins=False)
+    return render_template(
+        "leaderboard.html", board=board, task_ids=task_ids,
+        max_per_task=max_per_task, max_total=max_total, USERS=USERS,
+    )
+
+
 @app.route("/admin/results")
 @login_required
 @admin_required
 def admin_results():
-    board = []
-    for username, data in USERS.items():
-        details = {}
-        for sub in data.get("submissions", []):
-            task_id = sub["task_id"]
-            passed = sub["result"]["passed"]
-            total = sub["result"]["total"]
-            score = int(passed == total)
-            if task_id not in details or score > details[task_id]:
-                details[task_id] = score
-        board.append({
-            "user": username,
-            "details": details,
-            "total": sum(details.values()),
-        })
-
-    return render_template("admin_results.html", board=board, tasks=TASKS.keys(), USERS=USERS)
+    board, task_ids, max_per_task, max_total = compute_scores(include_admins=True)
+    return render_template(
+        "admin_results.html", board=board, task_ids=task_ids,
+        max_per_task=max_per_task, max_total=max_total, USERS=USERS,
+    )
 
 def parse_languages(raw_languages: str):
     parts = [part.strip().lower() for part in raw_languages.replace(",", " ").split()]
@@ -526,13 +655,32 @@ def delete_user(username):
     flash("Пользователь удалён.")
     return redirect(url_for("admin_users"))
 
+@app.route("/admin/solution/<path:filename>")
+@login_required
+@admin_required
+def view_solution(filename):
+    """Показывает исходный код решения прямо в браузере (не скачивает)."""
+    safe = os.path.basename(filename)
+    path = os.path.join(UPLOAD_DIR, safe)
+    if not os.path.abspath(path).startswith(os.path.abspath(UPLOAD_DIR) + os.sep) \
+            or not os.path.isfile(path):
+        abort(404)
+    try:
+        with open(path, "r", encoding="utf-8", errors="replace") as f:
+            code = f.read()
+    except Exception as e:
+        code = f"[Не удалось прочитать файл: {e}]"
+    return render_template("admin_solution.html", code=code, filename=safe, USERS=USERS)
+
+
 @app.route("/uploads/<path:filename>")
 @login_required
 def download_file(filename):
     user = USERS.get(session["user"])
     if not user or not user.get("is_admin"):
         return "Доступ запрещён", 403
-    return send_from_directory(UPLOAD_DIR, filename, as_attachment=True)
+    # Отдаём инлайн (as_attachment=False), чтобы решение отображалось, а не качалось.
+    return send_from_directory(UPLOAD_DIR, filename, as_attachment=False)
 
 _application = app
 

@@ -19,45 +19,168 @@
   </ul>
 {% endif %}
 
-<form method="post" action="{{ url_for('upload', task_id=task_id) }}" enctype="multipart/form-data">
-  <input type="file" name="solution">
-  <button type="submit">Отправить</button>
+<h3>Отправка решения</h3>
+<form id="solution-form" method="post" action="{{ url_for('upload', task_id=task_id) }}" enctype="multipart/form-data">
+  <div class="editor-block">
+    <label class="lang-label">Язык:
+      <select name="language" id="language">
+        {% for lang in task.languages %}
+          <option value="{{ lang }}">{{ lang }}</option>
+        {% endfor %}
+      </select>
+    </label>
+
+    <label class="editor-caption" for="code">Напишите код прямо здесь:</label>
+    <textarea id="code" name="code" class="code-editor" spellcheck="false"
+      autocomplete="off" autocapitalize="off"
+      placeholder="# ваш код..."></textarea>
+
+    <p class="or-sep">— или загрузите файл (.py / .cpp) —</p>
+    <input type="file" name="solution" id="solution-file">
+
+    <div>
+      <button type="submit" id="submit-btn">Отправить</button>
+    </div>
+  </div>
 </form>
 
+<div id="submit-status" class="submit-status" hidden></div>
+
 {% if submissions %}
-  <h3>История отправок:</h3>
+  <h3>История отправок</h3>
   {% for submission in submissions|reverse %}
-    <div style="border: 1px solid #ccc; padding: 10px; margin-bottom: 1em;">
+    <div class="submission">
       <p><strong>Время:</strong> {{ submission.timestamp.strftime("%Y-%m-%d %H:%M:%S") }}</p>
-      <p><strong>Пройдено:</strong> {{ submission.result.passed }} / {{ submission.result.total }}</p>
-      <ul>
-        {% for test in submission.result.details %}
-          <li style="margin-bottom: 0.5em;">
-            <strong>Тест {{ loop.index }}:</strong>
-            {% if is_admin_user %}
+      <p><strong>Результат:</strong>
+        <span class="score-badge">{{ submission.result.passed }} / {{ submission.result.total }}</span>
+        пройдено тестов</p>
+
+      {% if submission.result.compile_error %}
+        <p class="v-bad"><strong>Ошибка компиляции (CE):</strong></p>
+        <pre class="err-block">{{ submission.result.compile_error }}</pre>
+      {% elif submission.result.lang_error %}
+        <p class="v-bad">{{ submission.result.lang_error }}</p>
+      {% endif %}
+
+      {% if submission.result.details %}
+        <ul class="test-list">
+          {% for test in submission.result.details %}
+            <li>
+              <strong>Тест {{ loop.index }}:</strong>
               {% if test.passed %}
-                ✅ <span style="color:green;">AC</span>
+                ✅ <span class="v-ac">AC</span>
               {% else %}
-                ❌ <span style="color:red;">{{ test.verdict }}</span><br>
-                <strong>Ввод:</strong> <pre>{{ test.input }}</pre>
-                <strong>Ожидалось:</strong> <code>{{ test.expected }}</code><br>
-                <strong>Получено:</strong> <code>{{ test.output }}</code><br>
+                ❌ <span class="v-bad">{{ test.verdict }}</span>
+                {% if is_admin_user %}
+                  {# Администратор видит всё, включая ожидаемый вывод #}
+                  <br><strong>Ввод:</strong> <pre>{{ test.input }}</pre>
+                  <strong>Ожидалось:</strong> <pre>{{ test.expected }}</pre>
+                  <strong>Получено:</strong> <pre>{{ test.output }}</pre>
+                {% else %}
+                  {# Ученик видит только свой вывод и ошибку — тесты закрыты #}
+                  {% if test.output %}
+                    <br><strong>Ваш вывод:</strong> <pre>{{ test.output }}</pre>
+                  {% endif %}
+                {% endif %}
                 {% if test.error %}
-                  <strong>Ошибка:</strong> <pre style="color:red;">{{ test.error }}</pre>
+                  <strong>Ошибка:</strong> <pre class="err-block">{{ test.error }}</pre>
                 {% endif %}
               {% endif %}
-            {% else %}
-              {% if test.verdict == "AC" %}
-                ✅ <span style="color:green;">AC</span>
-              {% else %}
-                ❌ <span style="color:red;">{{ test.verdict }}</span>
-              {% endif %}
-            {% endif %}
-          </li>
-        {% endfor %}
-      </ul>
+            </li>
+          {% endfor %}
+        </ul>
+      {% endif %}
     </div>
   {% endfor %}
 {% endif %}
 
+<script>
+(function () {
+  var form = document.getElementById('solution-form');
+  var statusBox = document.getElementById('submit-status');
+  var btn = document.getElementById('submit-btn');
+  var codeEl = document.getElementById('code');
+  var fileEl = document.getElementById('solution-file');
+  var langEl = document.getElementById('language');
+
+  // Поддержка Tab в редакторе (вставляет 4 пробела вместо потери фокуса).
+  if (codeEl) {
+    codeEl.addEventListener('keydown', function (e) {
+      if (e.key === 'Tab') {
+        e.preventDefault();
+        var s = this.selectionStart, en = this.selectionEnd;
+        this.value = this.value.slice(0, s) + '    ' + this.value.slice(en);
+        this.selectionStart = this.selectionEnd = s + 4;
+      }
+    });
+  }
+
+  function setStatus(html, cls) {
+    if (!statusBox) return;
+    statusBox.hidden = false;
+    statusBox.className = 'submit-status ' + (cls || '');
+    statusBox.innerHTML = html;
+  }
+
+  if (!form) return;
+
+  form.addEventListener('submit', function (e) {
+    e.preventDefault();
+    var hasFile = fileEl && fileEl.files && fileEl.files.length > 0;
+    var hasCode = codeEl && codeEl.value.trim().length > 0;
+    if (!hasFile && !hasCode) {
+      setStatus('⚠️ Введите код или выберите файл.', 'err');
+      return;
+    }
+
+    btn.disabled = true;
+    setStatus('<span class="spinner"></span> Файл загружается…', 'pending');
+
+    var data = new FormData();
+    if (hasFile) {
+      data.append('solution', fileEl.files[0]);
+    } else {
+      data.append('code', codeEl.value);
+      data.append('language', langEl ? langEl.value : '');
+    }
+
+    fetch('{{ url_for("submit", task_id=task_id) }}', { method: 'POST', body: data })
+      .then(function (r) {
+        return r.json().then(function (j) { return { ok: r.ok, j: j }; });
+      })
+      .then(function (res) {
+        if (!res.ok) {
+          setStatus('❌ ' + (res.j.error || 'Ошибка отправки.'), 'err');
+          btn.disabled = false;
+          return;
+        }
+        setStatus('✅ Файл загружен. <span class="spinner"></span> Решение проверяется…', 'pending');
+        poll(res.j.job_id, 0);
+      })
+      .catch(function () {
+        setStatus('❌ Ошибка сети. Обновите страницу.', 'err');
+        btn.disabled = false;
+      });
+  });
+
+  function poll(jobId, tries) {
+    if (tries > 200) { location.reload(); return; }  // страховка (~2 мин)
+    var url = '{{ url_for("job_status", job_id="__JOB__") }}'.replace('__JOB__', jobId);
+    fetch(url)
+      .then(function (r) { return r.json(); })
+      .then(function (j) {
+        if (j.status === 'done') {
+          setStatus('✅ Проверка завершена. Обновляем страницу…', 'ok');
+          location.reload();
+        } else if (j.status === 'error') {
+          setStatus('❌ Ошибка проверки: ' + (j.error || ''), 'err');
+          btn.disabled = false;
+        } else {
+          setTimeout(function () { poll(jobId, tries + 1); }, 600);
+        }
+      })
+      .catch(function () { setTimeout(function () { poll(jobId, tries + 1); }, 1200); });
+  }
+})();
+</script>
 {% endblock %}

@@ -10,6 +10,7 @@
         <div class="bar">
             <a href="{{ url_for('index') }}">Задачи</a>
             {% if session.get("user") %}
+                <a href="{{ url_for('leaderboard') }}">Лидерборд</a>
                 <a href="{{ url_for('logout') }}">Выход ({{ session['user'] }})</a>
                 {% if USERS[session['user']]["is_admin"] %}
                     <a href="{{ url_for('admin') }}">Админка</a>

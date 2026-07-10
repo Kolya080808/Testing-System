@@ -1,0 +1,14 @@
+# Байткод Python
+__pycache__/
+*.py[cod]
+
+# Runtime-данные системы (создаются приложением)
+testingsystemp/public_html/submissions.json
+testingsystemp/public_html/users.json
+testingsystemp/public_html/tasks.json
+
+# Загруженные решения и результаты компиляции (кроме заглушек README)
+testingsystemp/public_html/uploads/*
+!testingsystemp/public_html/uploads/README.md
+testingsystemp/tmp_exec/*
+!testingsystemp/tmp_exec/README.md

@@ -2,50 +2,56 @@
 {% block title %}Результаты{% endblock %}
 {% block content %}
 <h2>Результаты всех пользователей</h2>
-<table>
-  <thead>
-    <tr>
-      <th>Пользователь</th>
-      <th>Баллы</th>
-      {% for t in tasks %}<th>{{ t }}</th>{% endfor %}
-    </tr>
-  </thead>
-  <tbody>
-    {% for row in board %}
+<p><em>Балл = число пройденных тестов (лучшая попытка по задаче). Максимум: {{ max_total }}.</em></p>
+<div class="table-wrap">
+  <table>
+    <thead>
       <tr>
-        <td>{{ row.user }}</td>
-        <td>{{ row.total }}</td>
-        {% for t in tasks %}
-          <td>{{ row.details.get(t, 0) }}</td>
-        {% endfor %}
+        <th>Пользователь</th>
+        <th>Баллы</th>
+        {% for t in task_ids %}<th title="максимум {{ max_per_task[t] }}">{{ t }}</th>{% endfor %}
       </tr>
-    {% endfor %}
-  </tbody>
-</table>
-
-<h2>Все отправленные файлы</h2>
-<table>
-  <thead>
-    <tr>
-      <th>Пользователь</th>
-      <th>Задача</th>
-      <th>Файл</th>
-      <th>Пройдено тестов</th>
-      <th>Скачать</th>
-    </tr>
-  </thead>
-  <tbody>
-    {% for username, user in USERS.items() %}
-      {% for sub in user.get("submissions", []) %}
+    </thead>
+    <tbody>
+      {% for row in board %}
         <tr>
-          <td>{{ username }}</td>
-          <td>{{ sub.task_id }}</td>
-          <td>{{ sub.filepath.split('/')[-1] }}</td>
-          <td>{{ sub.result.passed }}/{{ sub.result.total }}</td>
-          <td><a href="{{ url_for('download_file', filename=sub.filepath.split('/')[-1]) }}">Скачать</a></td>
+          <td>{{ row.user }}{% if row.is_admin %} <span class="admin-tag">админ</span>{% endif %}</td>
+          <td><strong>{{ row.total }}</strong> / {{ max_total }}</td>
+          {% for t in task_ids %}
+            {% set v = row.best.get(t) %}
+            <td>{% if v is not none %}{{ v }}/{{ max_per_task[t] }}{% else %}—{% endif %}</td>
+          {% endfor %}
         </tr>
       {% endfor %}
-    {% endfor %}
-  </tbody>
-</table>
+    </tbody>
+  </table>
+</div>
+
+<h2>Все отправленные файлы</h2>
+<div class="table-wrap">
+  <table>
+    <thead>
+      <tr>
+        <th>Пользователь</th>
+        <th>Задача</th>
+        <th>Файл</th>
+        <th>Пройдено тестов</th>
+        <th>Решение</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for username, user in USERS.items() %}
+        {% for sub in user.get("submissions", []) %}
+          <tr>
+            <td>{{ username }}</td>
+            <td>{{ sub.task_id }}</td>
+            <td>{{ sub.filepath.split('/')[-1] }}</td>
+            <td>{{ sub.result.passed }}/{{ sub.result.total }}</td>
+            <td><a href="{{ url_for('view_solution', filename=sub.filepath.split('/')[-1]) }}">Посмотреть</a></td>
+          </tr>
+        {% endfor %}
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
 {% endblock %}

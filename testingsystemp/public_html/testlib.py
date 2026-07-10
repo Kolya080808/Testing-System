@@ -1,9 +1,16 @@
 import subprocess
-import tempfile
 import os
-from itertools import permutations
+import re
 import time
 import random
+from itertools import permutations
+
+# Каталог для компиляции C++ решений. По умолчанию — рядом с проектом
+# (…/testingsystemp/tmp_exec). При переносе на хостинг при желании укажите
+# здесь свой абсолютный путь.
+TMP_EXEC_DIR = os.path.join(
+    os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "tmp_exec"
+)
 
 def run_python_code(filepath, input_str):
     try:
@@ -20,16 +27,18 @@ def run_python_code(filepath, input_str):
         return None, "RE", str(e)
 
     if result.returncode != 0:
-        return None, "RE", result.stderr.decode()
-    return result.stdout.decode().strip(), "OK", None
+        return None, "RE", result.stderr.decode(errors="replace")
+    return result.stdout.decode(errors="replace").strip(), "OK", None
 
-def run_cpp_code(filepath, input_str):
+def compile_cpp(filepath):
+    """Компилирует C++ файл ОДИН раз. Возвращает (exe_path, error).
 
-    tmp_root = "/path/to/testingsystemp/tmp_exec"
-    os.makedirs(tmp_root, exist_ok=True)
+    При ошибке компиляции exe_path=None, error — текст ошибки от g++.
+    """
+    os.makedirs(TMP_EXEC_DIR, exist_ok=True)
 
-    unique_id = f"{int(time.time() * 1000)}_{random.randint(1000,9999)}"
-    tmpdir = os.path.join(tmp_root, unique_id)
+    unique_id = f"{int(time.time() * 1000)}_{random.randint(1000, 9999)}"
+    tmpdir = os.path.join(TMP_EXEC_DIR, unique_id)
     os.makedirs(tmpdir, exist_ok=True)
 
     exe_path = os.path.join(tmpdir, "prog")
@@ -39,18 +48,21 @@ def run_cpp_code(filepath, input_str):
             ["g++", filepath, "-o", exe_path],
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
-            timeout=5
+            timeout=10
         )
     except subprocess.TimeoutExpired:
-        return None, "CE", "Compilation timeout"
+        return None, "Превышено время компиляции (10 с)."
     except Exception as e:
-        return None, "CE", str(e)
+        return None, str(e)
 
     if compile_result.returncode != 0:
-        return None, "CE", compile_result.stderr.decode()
+        return None, compile_result.stderr.decode(errors="replace")
 
     os.chmod(exe_path, 0o755)
+    return exe_path, None
 
+def run_binary(exe_path, input_str):
+    """Запускает уже скомпилированный бинарник на одном тесте."""
     try:
         result = subprocess.run(
             [exe_path],
@@ -59,13 +71,14 @@ def run_cpp_code(filepath, input_str):
             stderr=subprocess.PIPE,
             timeout=3
         )
-        if result.returncode != 0:
-            return None, "RE", result.stderr.decode()
-        return result.stdout.decode().strip(), "OK", None
     except subprocess.TimeoutExpired:
-        return None, "TLE", "Time limit exceeded"
+        return None, "TLE", "Превышено время выполнения (3 с)."
     except Exception as e:
         return None, "RE", str(e)
+
+    if result.returncode != 0:
+        return None, "RE", result.stderr.decode(errors="replace")
+    return result.stdout.decode(errors="replace").strip(), "OK", None
 
 TASKS = {
     "compress_string": {
@@ -204,84 +217,92 @@ TASKS = {
     },
 }
 
+def _check_permutations(raw_input, output):
+    """Проверяет вывод задачи permute_n НЕЗАВИСИМО от порядка строк.
+
+    Принимает любой формат строки: "(1, 2)", "1 2", "1,2" и т. п. — из каждой
+    строки берутся все целые числа. Решение верно, если множество выданных
+    перестановок в точности совпадает со всеми перестановками 1..N и нет
+    повторов. Возвращает (passed: bool, expected_repr: str).
+    """
+    try:
+        n = int(raw_input.strip())
+    except (ValueError, AttributeError):
+        return False, ""
+    expected = set(permutations(range(1, n + 1)))
+    produced = []
+    for line in output.splitlines():
+        nums = re.findall(r"-?\d+", line)
+        if nums:
+            produced.append(tuple(int(x) for x in nums))
+    ok = len(produced) == len(expected) and set(produced) == expected
+    return ok, f"все {len(expected)} перестановок чисел 1..{n} (в любом порядке)"
+
+
 def evaluate(task_id: str, filepath: str):
     print(f"[EVALUATE] Проверка файла {filepath} для задачи {task_id}")
     task = TASKS.get(task_id)
     if not task:
-        return {"passed": 0, "total": 0, "details": []}
+        return {"passed": 0, "total": 0, "details": [], "compile_error": None}
 
     ext = filepath.rsplit(".", 1)[-1].lower()
-    if ext not in task["languages"]:
-        return {"passed": 0, "total": len(task["tests"]), "details": []}
+    tests = task["tests"]
+    total = len(tests)
 
-    run_func = run_python_code if ext == "py" else run_cpp_code
+    if ext not in task["languages"]:
+        return {
+            "passed": 0, "total": total, "details": [], "compile_error": None,
+            "lang_error": f"Эта задача не поддерживает язык .{ext}.",
+        }
+
+    # C++ компилируем ОДИН раз. При ошибке компиляции — единый вердикт CE
+    # с текстом ошибки (а не молчаливый провал на каждом тесте).
+    exe_path = None
+    if ext == "cpp":
+        exe_path, compile_err = compile_cpp(filepath)
+        if exe_path is None:
+            print(f"[EVALUATE] Ошибка компиляции: {compile_err}")
+            return {"passed": 0, "total": total, "details": [], "compile_error": compile_err}
 
     passed = 0
-    total = len(task["tests"])
     details = []
 
-    for test in task["tests"]:
+    for test in tests:
         inp = test["input"]
         expected = test["output"]
 
-        output, status, err = run_func(filepath, inp)
-        print(f"[TEST] Вход: {inp.strip()} | Ожидаемый вывод: {expected.strip()} | Полученный вывод: {output.strip() if output else 'None'} | Статус: {status} | Ошибка: {err}")
+        if ext == "py":
+            output, status, err = run_python_code(filepath, inp)
+        else:
+            output, status, err = run_binary(exe_path, inp)
+
+        safe_out = output if output else ""
         result_entry = {
             "input": inp,
             "expected": expected,
-            "output": output if output else "",
+            "output": safe_out,
             "error": err,
             "passed": False,
-            "verdict": "WA",
+            "verdict": status if status != "OK" else "WA",
         }
 
         if status != "OK":
-            print(f"[ERROR] При выполнении теста возникла ошибка: {err}")
-            result_entry["verdict"] = status
             details.append(result_entry)
             continue
 
         if task_id == "permute_n":
-            import ast
+            ok, expected_repr = _check_permutations(inp, safe_out)
+            result_entry["expected"] = expected_repr
+            if ok:
+                passed += 1
+                result_entry["passed"] = True
+                result_entry["verdict"] = "AC"
+            else:
+                result_entry["verdict"] = "WA"
+            details.append(result_entry)
+            continue
 
-            try:
-                actual = ast.literal_eval(output)
-                expected = list(permutations(range(1, int(test["input"].strip()) + 1)))
-
-                if actual == expected:
-                    passed += 1
-                    details.append({
-                        "input": test["input"],
-                        "expected": str(expected),
-                        "output": str(actual),
-                        "passed": True,
-                        "error": None,
-                        "verdict": "AC",
-                    })
-                    continue
-                else:
-                    details.append({
-                        "input": test["input"],
-                        "expected": str(expected),
-                        "output": str(actual),
-                        "passed": False,
-                        "error": None,
-                        "verdict": "WA",
-                    })
-                    continue
-            except Exception as e:
-                details.append({
-                    "input": test["input"],
-                    "expected": str(expected),
-                    "output": output,
-                    "passed": False,
-                    "error": str(e),
-                    "verdict": "WA",
-                })
-                continue
-
-
-        if output.strip() == expected.strip():
+        if safe_out.strip() == expected.strip():
             passed += 1
             result_entry["passed"] = True
             result_entry["verdict"] = "AC"
@@ -290,4 +311,4 @@ def evaluate(task_id: str, filepath: str):
 
         details.append(result_entry)
 
-    return {"passed": passed, "total": total, "details": details}
+    return {"passed": passed, "total": total, "details": details, "compile_error": None}

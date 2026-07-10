@@ -1,0 +1,43 @@
+{% extends "base.html" %}
+{% block title %}Лидерборд{% endblock %}
+{% block content %}
+<h1>Лидерборд</h1>
+<p><em>Балл = число пройденных тестов (учитывается лучшая попытка по каждой задаче).
+Максимум: {{ max_total }} балл(ов).</em></p>
+
+<div class="table-wrap">
+  <table class="leaderboard">
+    <thead>
+      <tr>
+        <th>#</th>
+        <th>Участник</th>
+        <th>Баллы</th>
+        {% for t in task_ids %}
+          <th title="максимум {{ max_per_task[t] }}">{{ t }}</th>
+        {% endfor %}
+      </tr>
+    </thead>
+    <tbody>
+      {% for row in board %}
+        <tr class="{% if row.user == session['user'] %}me{% endif %}">
+          <td class="rank">{{ row.rank }}</td>
+          <td>{{ row.user }}</td>
+          <td><strong>{{ row.total }}</strong> / {{ max_total }}</td>
+          {% for t in task_ids %}
+            {% set v = row.best.get(t) %}
+            <td>
+              {% if v is not none %}
+                <span class="{% if v == max_per_task[t] and max_per_task[t] > 0 %}v-ac{% endif %}">{{ v }}/{{ max_per_task[t] }}</span>
+              {% else %}—{% endif %}
+            </td>
+          {% endfor %}
+        </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+{% if not board %}
+  <p>Пока нет результатов. Отправьте первое решение!</p>
+{% endif %}
+{% endblock %}
